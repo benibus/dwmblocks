@@ -36,7 +36,7 @@ void statusloop();
 void termhandler();
 
 
-#include "blocks.h"
+#include "config.h"
 
 static Display *dpy;
 static int screen;
@@ -61,7 +61,7 @@ void getcmd(const Block *block, char *output)
 	if (delim[0] != '\0') {
 		//only chop off newline if one is present at the end
 		i = output[i-1] == '\n' ? i-1 : i;
-		strncpy(output+i, delim, delimLen); 
+		strncpy(output+i, delim, delimLen);
 	}
 	else
 		output[i++] = '\0';
