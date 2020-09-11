@@ -65,14 +65,14 @@ void getcmd(const Block *block, char *output)
 		output[0] = block->signal;
 		output++;
 	}
-	strcpy(output, block->icon);
 	FILE *cmdf;
 	if (*button)
 	{
 		setenv("BUTTON", button, 1);
-		cmdf = popen(block->command, "r");
+		popen(block->command, "r");
 		*button = '\0';
 		unsetenv("BUTTON");
+		return;
 	}
 	else
 	{
@@ -80,6 +80,12 @@ void getcmd(const Block *block, char *output)
 	}
 	if (!cmdf)
 		return;
+	if (block->signal)
+	{
+		output[0] = block->signal;
+		output++;
+	}
+	strcpy(output, block->icon);
 	int i = strlen(block->icon);
 	fgets(output+i, CMDLENGTH-i-delimLen, cmdf);
 	i = strlen(output);
@@ -203,7 +209,6 @@ void buttonhandler(int sig, siginfo_t *si, void *ucontext)
 {
 	*button = '0' + si->si_value.sival_int & 0xff;
 	getsigcmds(si->si_value.sival_int >> 8);
-	writestatus();
 }
 #endif
 
