@@ -3,7 +3,9 @@
 #include<string.h>
 #include<unistd.h>
 #include<signal.h>
+#ifndef NO_X
 #include<X11/Xlib.h>
+#endif
 #ifdef __OpenBSD__
 #define SIGPLUS			SIGUSR1+1
 #define SIGMINUS		SIGUSR1-1
@@ -32,21 +34,28 @@ void getsigcmds(unsigned int signal);
 void setupsignals();
 void sighandler(int signum);
 int getstatus(char *str, char *last);
-void setroot();
 void statusloop();
 void termhandler();
+void pstdout();
+#ifndef NO_X
+void setroot();
+static void (*writestatus) () = setroot;
+static int setupX();
+static Display *dpy;
+static int screen;
+static Window root;
+#else
+static void (*writestatus) () = pstdout;
+#endif
 
 
 #include "config.h"
 
-static Display *dpy;
-static int screen;
-static Window root;
 static char statusbar[LENGTH(blocks)][CMDLENGTH] = {0};
 static char statusstr[2][STATUSLENGTH];
 static char button[] = "\0";
 static int statusContinue = 1;
-static void (*writestatus) () = setroot;
+static int returnStatus = 0;
 
 //opens process *cmd and stores output in *output
 void getcmd(const Block *block, char *output)
@@ -95,8 +104,7 @@ void getcmd(const Block *block, char *output)
 void getcmds(int time)
 {
 	const Block* current;
-	for (unsigned int i = 0; i < LENGTH(blocks); i++)
-	{
+	for (unsigned int i = 0; i < LENGTH(blocks); i++) {
 		current = blocks + i;
 		if ((current->interval != 0 && time % current->interval == 0) || time == -1)
 			getcmd(current,statusbar[i]);
@@ -106,8 +114,7 @@ void getcmds(int time)
 void getsigcmds(unsigned int signal)
 {
 	const Block *current;
-	for (unsigned int i = 0; i < LENGTH(blocks); i++)
-	{
+	for (unsigned int i = 0; i < LENGTH(blocks); i++) {
 		current = blocks + i;
 		if (current->signal == signal)
 			getcmd(current,statusbar[i]);
@@ -123,8 +130,7 @@ void setupsignals()
 #endif
 
 	struct sigaction sa;
-	for (unsigned int i = 0; i < LENGTH(blocks); i++)
-	{
+	for (unsigned int i = 0; i < LENGTH(blocks); i++) {
 		if (blocks[i].signal > 0) {
 			signal(SIGMINUS+blocks[i].signal, sighandler);
 			sigaddset(&sa.sa_mask, SIGRTMIN+blocks[i].signal); // ignore signal when handling SIGUSR1
@@ -146,19 +152,27 @@ int getstatus(char *str, char *last)
 	return strcmp(str, last);//0 if they are the same
 }
 
+#ifndef NO_X
 void setroot()
 {
 	if (!getstatus(statusstr[0], statusstr[1]))//Only set root if text has changed.
 		return;
-	Display *d = XOpenDisplay(NULL);
-	if (d) {
-		dpy = d;
+	XStoreName(dpy, root, statusstr[0]);
+	XFlush(dpy);
+}
+
+int setupX()
+{
+	dpy = XOpenDisplay(NULL);
+	if (!dpy) {
+		fprintf(stderr, "dwmblocks: Failed to open display\n");
+		return 0;
 	}
 	screen = DefaultScreen(dpy);
 	root = RootWindow(dpy, screen);
-	XStoreName(dpy, root, statusstr[0]);
-	XCloseDisplay(dpy);
+	return 1;
 }
+#endif
 
 void pstdout()
 {
@@ -174,10 +188,11 @@ void statusloop()
 	setupsignals();
 	int i = 0;
 	getcmds(-1);
-	while (statusContinue)
-	{
+	while (1) {
 		getcmds(i++);
 		writestatus();
+		if (!statusContinue)
+			break;
 		sleep(1.0);
 	}
 }
@@ -209,16 +224,23 @@ void termhandler()
 
 int main(int argc, char** argv)
 {
-	for (int i = 0; i < argc; i++) //Handle command line arguments
-	{
+	for (int i = 0; i < argc; i++) {//Handle command line arguments
 		if (!strcmp("-d",argv[i]))
 			strncpy(delim, argv[++i], delimLen);
 		else if (!strcmp("-p",argv[i]))
 			writestatus = pstdout;
 	}
+#ifndef NO_X
+	if (!setupX())
+		return 1;
+#endif
 	delimLen = MIN(delimLen, strlen(delim));
 	delim[delimLen++] = '\0';
 	signal(SIGTERM, termhandler);
 	signal(SIGINT, termhandler);
 	statusloop();
+#ifndef NO_X
+	XCloseDisplay(dpy);
+#endif
+	return 0;
 }
